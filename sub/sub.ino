@@ -1,7 +1,6 @@
 #include <Wire.h>
 #include <WiFi.h>
 #include <FastLED.h>
-#include <M5Stack.h>
 
 struct NetworkInfo {
   char ssid[32];
@@ -12,8 +11,8 @@ struct NetworkInfo {
   char type;
 };
 
-//different i2c pins, same rgb led
 //#define STAMP
+#define STAMPC3
 
 #define SET2
 
@@ -45,24 +44,24 @@ const int channels[] = {10, 11};
 // 1..6
 #define NODEID 2
 #if NODEID==1
-#define STAMP
+#define STAMPC3
 const int channels[] = {1, 12};
 #elif NODEID==2
-#define STAMP
+#define STAMPC3
 const int channels[] = {2, 3, 4};
 #elif NODEID==3
-#define STAMP
+#define STAMPC3
 const int channels[] = {6, 13};
 #elif NODEID==4
-#define STAMP
+#define STAMPC3
 const int channels[] = {5, 7, 8};
 #elif NODEID==5
-#define STAMP
+#define STAMPC3
 const int channels[] = {9, 14};
 //since 14 unused in eu
 #define enableBLE
 #elif NODEID==6
-#define STAMP
+#define STAMPC3
 const int channels[] = {10, 11};
 #endif
 #endif
@@ -75,10 +74,15 @@ const int i2c_slave_address = 0x55;
 #define SUB_SDA 2
 #define SUB_SCL 1
 #else
+#ifdef STAMPC3
+#define BTN 3
+#define LED_PIN 2
+//#define SUB_SDA 01
+//#define SUB_SCL 00
+#define SUB_SDA 19
+#define SUB_SCL 18
+#else
 #define LED_PIN 27
-#ifdef STAMP
-#define SUB_SDA 32
-#define SUB_SCL 33
 #endif
 #endif
 const int MAX_NETWORKS = 500;
@@ -220,17 +224,27 @@ int incrementPerChannel[15] = {STD_INC, POP_INC, STD_INC, STD_INC, STD_INC, STD_
 
 #include "driver/rtc_io.h"
 void setup() {
-#ifdef STAMP
-// https://github.com/espressif/esp-idf/issues/285
-// https://github.com/SmingHub/Sming/issues/2715
-//Before: E (123) i2c: i2c_set_pin(870): sda gpio number error
-//After:  E (4122) i2c: i2c_set_pin(870): sda gpio number error
-gpio_pad_select_gpio(GPIO_NUM_32);
-rtc_gpio_deinit(GPIO_NUM_32);
-gpio_pad_select_gpio(GPIO_NUM_33);
-rtc_gpio_deinit(GPIO_NUM_33);
+#ifdef STAMPC3
+//https://esp32.com/viewtopic.php?t=24392
+
+//After: (4194) i2c: i2c_set_pin(870): sda gpio number error
+//gpio_reset_pin(GPIO_NUM_18);
+//gpio_reset_pin(GPIO_NUM_19);
+
+
 /*
-#define GPIO_BIT_MASK  ((1ULL<<GPIO_NUM_32) | (1ULL<<GPIO_NUM_33))
+ include wrong
+//Before: E (123) i2c: i2c_set_pin(870): sda gpio number error
+//After: (4194) i2c: i2c_set_pin(870): sda gpio number error
+gpio_pad_select_gpio(GPIO_NUM_18);
+rtc_gpio_deinit(GPIO_NUM_18);
+gpio_pad_select_gpio(GPIO_NUM_19);
+rtc_gpio_deinit(GPIO_NUM_19);
+*/
+
+//After: E (4193) i2c: i2c_set_pin(870): sda gpio number error
+/*
+#define GPIO_BIT_MASK  ((1ULL<<GPIO_NUM_18) | (1ULL<<GPIO_NUM_19))
 
   gpio_config_t io_conf;
   io_conf.intr_type = GPIO_INTR_DISABLE;
@@ -239,8 +253,8 @@ rtc_gpio_deinit(GPIO_NUM_33);
   io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
   io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
   gpio_config(&io_conf);
-*/
 #endif
+*/
 
 
   Serial.begin(115200);
@@ -279,7 +293,7 @@ rtc_gpio_deinit(GPIO_NUM_33);
 
 
 
-#if defined(STAMP) || defined(ATOMS3)
+#if defined(STAMPC3) || defined(ATOMS3)
   Wire.begin(i2c_slave_address, SUB_SDA, SUB_SCL);
 #else
   Wire.begin(i2c_slave_address);
@@ -298,33 +312,34 @@ rtc_gpio_deinit(GPIO_NUM_33);
   Serial.println("Hydrahead " + String(NODEID) + " started!");
 }
 
-#ifdef STAMP
-void processButton() {
-  M5.update();
+//#ifdef STAMP
+//void processButton() {
+//  M5.update();
 
-  if (M5.BtnA.wasReleased()) {
-    Serial.println("Reset");
-    ESP.restart();
+//  if (M5.BtnA.wasReleased()) {
+//    Serial.println("Reset");
+//    ESP.restart();
     /*    while (true) {
           ;
         }*/
-  }
-}
-#endif
+//  }
+//}
+//#endif
 
 void loop() {
-#ifdef STAMP
-  processButton();
-#endif
-  if (!scan) {
-    return;
-  }
+//#ifdef STAMP
+//  processButton();
+//#endif
+//  if (!scan) {
+//    return;
+//  }
   int savedNetworks = 0;
   if (networkCount < MAX_NETWORKS) {
 #ifdef enableBLE
     BLEScanResults foundDevices = pBLEScan->start(2.5, false);
     Serial.print("Devices found: ");
     Serial.println(mac_history_cursor);
+    updateTimePerChannel(0, mac_history_cursor);
     savedNetworks += mac_history_cursor;
     Serial.println("Scan done!");
     pBLEScan->clearResults();   // delete results fromBLEScan buffer to release memory
