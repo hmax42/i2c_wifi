@@ -263,35 +263,12 @@ rtc_gpio_deinit(GPIO_NUM_19);
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
 
-//#ifdef STAMP
-//  FastLED.addLeds<NEOPIXEL, LED_PIN>(led, numLeds);
-//#else
   FastLED.addLeds<WS2812, LED_PIN, GRB>(led, numLeds);
-//#endif
 #ifdef MATRIX
   FastLED.setBrightness(32);
 #endif
-  Serial.println("Red");
-  setLed(CRGB::Red);
-  FastLED.show();
-  delay(1000);
-  Serial.println("Green");
-  setLed(CRGB::Green);
-  FastLED.show();
-  delay(1000);
-  Serial.println("Blue");
-  setLed(CRGB::Blue);
-  FastLED.show();
-  delay(1000);
-  Serial.println("Black");
   setLed(CRGB::Black);
   FastLED.show();
-  delay(1000);
-
-
-
-
-
 
 #if defined(STAMPC3) || defined(ATOMS3)
   Wire.begin(i2c_slave_address, SUB_SDA, SUB_SCL);
