@@ -1,6 +1,7 @@
 #include <Wire.h>
 #include <WiFi.h>
 #include <FastLED.h>
+#include <M5Stack.h>
 
 struct NetworkInfo {
   char ssid[32];
@@ -12,10 +13,12 @@ struct NetworkInfo {
 };
 
 //different i2c pins, same rgb led
-//#define PICO
+//#define STAMP
 
+#define SET2
 
-// 1..4
+#ifdef SET1
+// 1..6
 #define NODEID 5
 #if NODEID==1
 const int channels[] = {1, 12};
@@ -36,6 +39,34 @@ const int channels[] = {9, 14};
 #elif NODEID==6
 const int channels[] = {10, 11};
 #endif
+#endif
+
+#ifdef SET2
+// 1..6
+#define NODEID 2
+#if NODEID==1
+#define STAMP
+const int channels[] = {1, 12};
+#elif NODEID==2
+#define STAMP
+const int channels[] = {2, 3, 4};
+#elif NODEID==3
+#define STAMP
+const int channels[] = {6, 13};
+#elif NODEID==4
+#define STAMP
+const int channels[] = {5, 7, 8};
+#elif NODEID==5
+#define STAMP
+const int channels[] = {9, 14};
+//since 14 unused in eu
+#define enableBLE
+#elif NODEID==6
+#define STAMP
+const int channels[] = {10, 11};
+#endif
+#endif
+
 
 volatile bool scan = false;
 const int i2c_slave_address = 0x55;
@@ -45,7 +76,7 @@ const int i2c_slave_address = 0x55;
 #define SUB_SCL 1
 #else
 #define LED_PIN 27
-#ifdef PICO
+#ifdef STAMP
 #define SUB_SDA 32
 #define SUB_SCL 33
 #endif
@@ -59,6 +90,7 @@ const int numLeds = 25;
 #else
 const int numLeds = 1;
 #endif
+
 CRGB led[numLeds];
 
 const int channelCount = (sizeof(channels) / sizeof(channels[0]));
@@ -184,23 +216,70 @@ const int standardChannels[] = { 2, 3, 4, 5, 7, 8, 9, 10 };
 const int rareChannels[] = { 12, 13, 14 };  // Depending on region
 const int ble = 50;
 int timePerChannel[15] = { ble, 300, 200, 200, 200, 200, 300, 200, 200, 200, 200, 300, 200, 200, 200 };
-int incrementPerChannel[15] = {0, POP_INC, STD_INC, STD_INC, STD_INC, STD_INC, POP_INC, STD_INC, STD_INC, STD_INC, STD_INC, POP_INC, RARE_INC, RARE_INC, RARE_INC};
+int incrementPerChannel[15] = {STD_INC, POP_INC, STD_INC, STD_INC, STD_INC, STD_INC, POP_INC, STD_INC, STD_INC, STD_INC, STD_INC, POP_INC, RARE_INC, RARE_INC, RARE_INC};
 
+#include "driver/rtc_io.h"
 void setup() {
+#ifdef STAMP
+// https://github.com/espressif/esp-idf/issues/285
+// https://github.com/SmingHub/Sming/issues/2715
+//Before: E (123) i2c: i2c_set_pin(870): sda gpio number error
+//After:  E (4122) i2c: i2c_set_pin(870): sda gpio number error
+gpio_pad_select_gpio(GPIO_NUM_32);
+rtc_gpio_deinit(GPIO_NUM_32);
+gpio_pad_select_gpio(GPIO_NUM_33);
+rtc_gpio_deinit(GPIO_NUM_33);
+/*
+#define GPIO_BIT_MASK  ((1ULL<<GPIO_NUM_32) | (1ULL<<GPIO_NUM_33))
+
+  gpio_config_t io_conf;
+  io_conf.intr_type = GPIO_INTR_DISABLE;
+  io_conf.mode = GPIO_MODE_OUTPUT;
+  io_conf.pin_bit_mask = GPIO_BIT_MASK;
+  io_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
+  io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+  gpio_config(&io_conf);
+*/
+#endif
+
+
   Serial.begin(115200);
   Serial.println("[SLAVE] Starting up");
 
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
 
+//#ifdef STAMP
+//  FastLED.addLeds<NEOPIXEL, LED_PIN>(led, numLeds);
+//#else
   FastLED.addLeds<WS2812, LED_PIN, GRB>(led, numLeds);
+//#endif
 #ifdef MATRIX
   FastLED.setBrightness(32);
 #endif
+  Serial.println("Red");
+  setLed(CRGB::Red);
+  FastLED.show();
+  delay(1000);
+  Serial.println("Green");
+  setLed(CRGB::Green);
+  FastLED.show();
+  delay(1000);
+  Serial.println("Blue");
+  setLed(CRGB::Blue);
+  FastLED.show();
+  delay(1000);
+  Serial.println("Black");
   setLed(CRGB::Black);
   FastLED.show();
+  delay(1000);
 
-#if defined(PICO) || defined(ATOMS3)
+
+
+
+
+
+#if defined(STAMP) || defined(ATOMS3)
   Wire.begin(i2c_slave_address, SUB_SDA, SUB_SCL);
 #else
   Wire.begin(i2c_slave_address);
@@ -219,7 +298,24 @@ void setup() {
   Serial.println("Hydrahead " + String(NODEID) + " started!");
 }
 
+#ifdef STAMP
+void processButton() {
+  M5.update();
+
+  if (M5.BtnA.wasReleased()) {
+    Serial.println("Reset");
+    ESP.restart();
+    /*    while (true) {
+          ;
+        }*/
+  }
+}
+#endif
+
 void loop() {
+#ifdef STAMP
+  processButton();
+#endif
   if (!scan) {
     return;
   }
@@ -361,7 +457,7 @@ void blinkLED() {
   int d = 50;
 #ifdef MATRIX
   CRGB c = led[0];
-//  for (int i = 0; i < 3; i++) {
+  //  for (int i = 0; i < 3; i++) {
   for (int i = 2; i > -1; i--) {
     if (i == 0) {
       //outer ring
