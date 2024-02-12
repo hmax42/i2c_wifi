@@ -1,4 +1,8 @@
-#define DomServer
+//#define COMM_I2C
+#define COMM_NOW
+
+
+//#define DomServer
 //use esp32 (2.0.13), 80, dio 80, 8mb
 //#define S3OLED
 
@@ -6,7 +10,15 @@
 #ifdef DomServer
 #include <WebServer.h>
 #endif
+
+#ifdef COMM_I2C
 #include <Wire.h>
+#endif
+
+#ifdef COMM_NOW
+#include <esp_now.h>
+#endif
+
 #include <SPI.h>
 #include <SD.h>
 #include <TinyGPS++.h>
@@ -50,10 +62,14 @@ String fileName;
 const char* ssid = "ESP32_Dom_Network";
 const char* password = "12345678";
 #endif
+#ifdef COMM_I2C
 const int i2c_slave_address = 0x55;
 #define TCAADDR 0x70
+#endif
 #define NUM_PORTS 6
+#ifdef S3OLED
 bool oled = true;
+#endif
 
 struct NetworkInfo {
   char ssid[32];
@@ -62,6 +78,7 @@ struct NetworkInfo {
   char security[20];
   uint8_t channel;
   char type;
+  int boardId;
 };
 
 NetworkInfo receivedNetworks[NUM_PORTS];
@@ -71,6 +88,25 @@ int totalNetworksSent[NUM_PORTS] = { 0 };
 #ifdef S3OLED
 // 0 is BLE
 int countNetworks[15] = {0};
+#endif
+
+
+#ifdef COMM_NOW
+NetworkInfo myData;
+
+// Callback function that will be executed when data is received
+void OnDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len) {
+  memcpy(&myData, incomingData, sizeof(myData));
+  int node = myData.boardId;
+  Serial.println("Received " + String(myData.ssid));
+#ifdef DomServer
+  totalNetworksSent[node]++;
+#endif
+#ifdef S3OLED
+  countNetworks[myData.channel]++;
+#endif
+  logData(myData, node);
+}
 #endif
 
 void setup() {
@@ -101,8 +137,11 @@ void setup() {
   server.on("/data", handleData);
   server.begin();
 #endif
+#ifdef COMM_I2C
   Wire.begin(SUB_SDA , SUB_SCL);  // SDA, SCL
   Serial.println("[MASTER] I2C Master Initialized");
+#endif
+
   SPI.begin(SD_CLK, SD_MISO, SD_MOSI, -1);  // Initialize SPI for SD card
   if (!SD.begin()) {
     Serial.println("SD Card initialization failed!");
@@ -126,6 +165,18 @@ void setup() {
 
   initializeFile();
   Serial.println("File created.");
+
+#ifdef COMM_NOW
+  WiFi.mode(WIFI_STA);
+
+  if (esp_now_init() != 0) {
+    Serial.println("Error initializing ESP-NOW");
+    return;
+  }
+
+  esp_now_register_recv_cb(OnDataRecv);
+  Serial.println("[MASTER] ESP-NOW initialized");
+#endif
 }
 #ifdef S3OLED
 long displayUpdateDelay = 15000;
@@ -191,11 +242,11 @@ void draw(bool update) {
       //0 is ble
       int c = countNetworks[i];
       String ct = String(c);
-      if (c>1000) {
+      if (c > 1000) {
         c = c / 1000;
         ct = String (c) + "k";
       }
-      AtomS3.Display.drawString((i < 10 ? "0": "" )+String(i) + " : " + (ct),
+      AtomS3.Display.drawString((i < 10 ? "0" : "" ) + String(i) + " : " + (ct),
                                 col * (AtomS3.Display.width() / COLS),
                                 row * (AtomS3.Display.height() / ROWS));
 
@@ -223,6 +274,7 @@ void loop() {
   while (GPSSERIAL.available() > 0) {
     gps.encode(GPSSERIAL.read());
   }
+#ifdef COMM_I2C
   for (uint8_t port = 0; port < NUM_PORTS; port++) {
     tcaselect(port);
     blinkLEDWhite();
@@ -236,6 +288,7 @@ void loop() {
       logData(receivedNetworks[port], port);
     }
   }
+#endif
 }
 
 #ifdef DomServer
@@ -272,6 +325,7 @@ void handleData() {
 }
 
 #endif
+#ifdef COMM_I2C
 void tcaselect(uint8_t i) {
   if (i >= NUM_PORTS) return;
   Wire.beginTransmission(TCAADDR);
@@ -293,6 +347,7 @@ bool requestNetworkData(uint8_t port) {
   }
   return true;
 }
+#endif
 
 void waitForGPSFix() {
   unsigned long lastBlink = 0;
@@ -401,30 +456,6 @@ void logData(const NetworkInfo& network, uint8_t port) {
   }
 }
 
-const char* getAuthType(uint8_t wifiAuth) {
-  switch (wifiAuth) {
-    case WIFI_AUTH_OPEN:
-      return "[OPEN]";
-    case WIFI_AUTH_WEP:
-      return "[WEP]";
-    case WIFI_AUTH_WPA_PSK:
-      return "[WPA_PSK]";
-    case WIFI_AUTH_WPA2_PSK:
-      return "[WPA2_PSK]";
-    case WIFI_AUTH_WPA_WPA2_PSK:
-      return "[WPA_WPA2_PSK]";
-    case WIFI_AUTH_WPA2_ENTERPRISE:
-      return "[WPA2_ENTERPRISE]";
-    case WIFI_AUTH_WPA3_PSK:
-      return "[WPA3_PSK]";
-    case WIFI_AUTH_WPA2_WPA3_PSK:
-      return "[WPA2_WPA3_PSK]";
-    case WIFI_AUTH_WAPI_PSK:
-      return "[WAPI_PSK]";
-    default:
-      return "[UNDEFINED]";
-  }
-}
 
 void blinkLEDWhite() {
 #ifdef S3OLED
@@ -471,9 +502,9 @@ void blinkLEDPurple() {
 }
 
 void blinkLED() {
+#ifdef S3OLED
   if (!oled)
     return;
-#ifdef S3OLED
   AtomS3.Display.fillRect((AtomS3.Display.width() - blinkSize), (AtomS3.Display.height() - blinkSize) , blinkSize , blinkSize , fg);
 #else
   FastLED.show();
