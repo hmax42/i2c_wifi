@@ -1,3 +1,8 @@
+
+
+
+
+
 //#define COMM_I2C
 #define COMM_NOW
 
@@ -58,7 +63,7 @@ const int channels[] = {10, 11};
 #ifdef SET3
 #define MAX_NETWORKS 400
 // 1..3
-#define NODEID 1
+#define NODEID 3
 #if NODEID==1
 const int channels[] = {1, 2, 3, 4, 5};
 #elif NODEID==2
@@ -69,8 +74,8 @@ const int channels[] = {11, 12, 13, 14};
 #endif
 #endif
 
-#ifdef COMM_I2C
 volatile bool scan = false;
+#ifdef COMM_I2C
 const int i2c_slave_address = 0x55;
 #ifdef S3LITE
 #define LED_PIN 35
@@ -115,6 +120,17 @@ void OnDataSent(const uint8_t* mac_addr, esp_now_send_status_t status) {
   Serial.print("\r\nLast Packet Send Status:\t");
   Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 }
+
+//callback to enable scanning
+void OnDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len) {
+  if(!scan) {
+    scan = true;
+    blinkLEDGreen();
+  }
+}
+
+
+
 #endif
 
 #ifdef enableBLE
@@ -243,6 +259,8 @@ void setup() {
   // get the status of Trasnmitted packet
   //esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
   esp_now_register_send_cb(OnDataSent);
+  //callbakc to start scanning, no use scanning, if dom has no gps
+  esp_now_register_recv_cb(OnDataRecv);
 
   // Register peer
   memcpy(peerInfo.peer_addr, broadcastAddress, 6);
@@ -287,11 +305,9 @@ void setup() {
 }
 
 void loop() {
-#ifdef COMM_I2C
   if (!scan) {
     return;
   }
-#endif
   int savedNetworks = 0;
   if (networkCount < MAX_NETWORKS) {
 #ifdef enableBLE

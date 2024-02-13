@@ -1,3 +1,25 @@
+/*
+   M5Atom-Hydra
+
+   Hardware-Compatibility
+
+   ^----------------------------------------------------------------------------------------------^
+   |  Hardware                     | Dom | Sub | I2C | ESP-now | Notes                            |
+   |  Atom Lite                    |  x  |  x  |  x  |    ?    |                                  |
+   |  Atom (Lite) Matrix           |  x  |  x! |  x  |    ?    |                                  |
+   |  Atom (Lite) Echo             |  x  |  x  |  x  |    x    | i2s conflicts spi & gps serial   |
+   |  Atom S3 (Lite) Oled          |  x! |  ?  |  x  |    ?    |                                  |
+   |  Atom S3 Lite                 |  x  |  ?  |  x  |    ?    | ch5,7,8 nothing found            |
+   |  Stamp (Mate)                 |  ?  |  x  |  -  |    x    | i2c slave error                  |
+   |  Stamp (C3)                   |  ?  |  ?  |  -  |    x    | i2c slave error                  |
+   |  Stamp (S3)                   |  ?  |  ?  |  -  |    ?    | untested (i2c slave error)       |
+   |                               |     |     |     |         |                                  |
+   °----------------------------------------------------------------------------------------------°
+
+
+*/
+
+
 //#define COMM_I2C
 #define COMM_NOW
 
@@ -17,6 +39,9 @@
 
 #ifdef COMM_NOW
 #include <esp_now.h>
+//how often to send the msg to subs to start scanning (in case a sub reboots or is rebooted)
+//1 min = 60000
+#define BROADCASTINTERVALL 60000
 #endif
 
 #include <SPI.h>
@@ -82,6 +107,7 @@ struct NetworkInfo {
 };
 
 NetworkInfo receivedNetworks[NUM_PORTS];
+
 #ifdef DomServer
 int totalNetworksSent[NUM_PORTS] = { 0 };
 #endif
@@ -92,6 +118,9 @@ int countNetworks[15] = {0};
 
 
 #ifdef COMM_NOW
+uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+esp_now_peer_info_t peerInfo;
+long lastBroadcastMillis = -1;
 NetworkInfo myData;
 
 // Callback function that will be executed when data is received
@@ -106,6 +135,11 @@ void OnDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len) {
   countNetworks[myData.channel]++;
 #endif
   logData(myData, node);
+}
+
+void OnDataSent(const uint8_t* mac_addr, esp_now_send_status_t status) {
+  Serial.print("\r\nLast Packet Send Status:\t");
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
 }
 #endif
 
@@ -159,12 +193,12 @@ void setup() {
     return;
   }
   Serial.println("SD Card initialized.");
-
   GPSSERIAL.begin(9600, SERIAL_8N1, GPS_RX, -1);  // GPS Serial
   waitForGPSFix();
 
   initializeFile();
   Serial.println("File created.");
+
 
 #ifdef COMM_NOW
   WiFi.mode(WIFI_STA);
@@ -175,9 +209,33 @@ void setup() {
   }
 
   esp_now_register_recv_cb(OnDataRecv);
+  esp_now_register_send_cb(OnDataSent);
   Serial.println("[MASTER] ESP-NOW initialized");
+
+  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
+  peerInfo.channel = 0;
+  peerInfo.encrypt = false;
+
+  // Add peer
+  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+    Serial.println("Failed to add peer");
+    return;
+  }
+
+  // tell sub to start scanning
+  sendSubMsg();
 #endif
 }
+
+#ifdef COMM_NOW
+uint8_t dummy = 0;
+
+void  sendSubMsg() {
+  esp_now_send(broadcastAddress, (uint8_t*)&dummy, sizeof(dummy));
+  lastBroadcastMillis = millis();
+}
+#endif
+
 #ifdef S3OLED
 long displayUpdateDelay = 15000;
 long lastDisplayUpdate = -15000;
@@ -287,6 +345,17 @@ void loop() {
 #endif
       logData(receivedNetworks[port], port);
     }
+  }
+#endif
+
+#ifdef COMM_NOW
+  //in case a sub rebooted
+  long n = millis();
+  if (n - lastBroadcastMillis > BROADCASTINTERVALL) {
+    sendSubMsg();
+  } else {
+    //more possiblity to receive msgs
+    delay(10);
   }
 #endif
 }
