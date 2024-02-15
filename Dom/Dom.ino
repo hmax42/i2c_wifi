@@ -6,10 +6,10 @@
    ^----------------------------------------------------------------------------------------------^
    |  Hardware                     | Dom | Sub | I2C | ESP-now | Notes                            |
    |  Atom Lite                    |  x  |  x  |  x  |    ?    |                                  |
-   |  Atom (Lite) Matrix           |  x  |  x! |  x  |    ?    |                                  |
-   |  Atom (Lite) Echo             |  x  |  x  |  x  |    x    | i2s conflicts spi & gps serial   |
+   |  Atom (Lite) Matrix           |  ?  |  x! |  x  |    ?    | why u no work                    |
+   |  Atom (Lite) Echo             |  -  |  ?  |  ?  |    x    | i2s conflicts spi & gps serial   |
    |  Atom S3 (Lite) Oled          |  x! |  ?  |  x  |    ?    |                                  |
-   |  Atom S3 Lite                 |  x  |  ?  |  x  |    ?    | ch5,7,8 nothing found            |
+   |  Atom S3 Lite                 |  x  |  ?  |  x  |    x    | ch5,7,8 nothing found            |
    |  Stamp (Mate)                 |  ?  |  x  |  -  |    x    | i2c slave error                  |
    |  Stamp (C3)                   |  ?  |  ?  |  -  |    x    | i2c slave error                  |
    |  Stamp (S3)                   |  ?  |  ?  |  -  |    ?    | untested (i2c slave error)       |
@@ -19,14 +19,17 @@
 
 */
 
-
+// CHOOSE COMMUNICATION
 //#define COMM_I2C
 #define COMM_NOW
 
-
+// CHOOSE WEBSERVER
 //#define DomServer
-//use esp32 (2.0.13), 80, dio 80, 8mb
+
+// CHOOSE HARDWARE
 //#define S3OLED
+#define S3LITE
+//#define ATOMLITE
 
 #include <WiFi.h>
 #ifdef DomServer
@@ -47,7 +50,41 @@
 #include <SPI.h>
 #include <SD.h>
 #include <TinyGPS++.h>
+
 #ifdef S3OLED
+#define S3
+int const blinkSize = 10;
+int const centerText = 3;
+int fg = WHITE;
+int bg = BLACK;
+bool fileInit = false;
+#endif
+
+#ifdef S3LITE
+#define S3
+#define LITE
+const int LED_PIN = 35;
+#endif
+
+#ifdef ATOMLITE 
+#define LITE
+#define SUB_SDA 26
+#define SUB_SCL 32
+#define GPS_RX 22
+#define SD_CLK 23
+#define SD_MISO 33
+#define SD_MOSI 19
+#define BTN 39
+#define GPSSERIAL Serial1
+const int LED_PIN = 27;
+#endif
+
+#ifdef LITE
+#include <FastLED.h>
+CRGB led;
+#endif
+
+#ifdef S3
 #define SUB_SDA 2
 #define SUB_SCL 1
 #define GPS_RX 5
@@ -57,24 +94,8 @@
 #define BTN 41
 #define GPSSERIAL Serial2
 #include <M5AtomS3.h>
-int const blinkSize = 10;
-int const centerText = 3;
-int fg = WHITE;
-int bg = BLACK;
-bool fileInit = false;
-#else
-#define SUB_SDA 26
-#define SUB_SCL 32
-#define GPS_RX 22
-#define SD_CLK 23
-#define SD_MISO 33
-#define SD_MOSI 19
-#define BTN 39
-#include <FastLED.h>
-#define GPSSERIAL Serial1
-const int LED_PIN = 27;
-CRGB led;
 #endif
+
 
 TinyGPSPlus gps;
 #ifdef DomServer
