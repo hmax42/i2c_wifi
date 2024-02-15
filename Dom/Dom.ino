@@ -124,7 +124,9 @@ struct NetworkInfo {
   char security[20];
   uint8_t channel;
   char type;
+#ifdef COMM_NEW  
   int boardId;
+#endif
 };
 
 NetworkInfo receivedNetworks[NUM_PORTS];
