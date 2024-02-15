@@ -1,12 +1,6 @@
 
-
-
-
-
 //#define COMM_I2C
 #define COMM_NOW
-
-
 
 #ifdef COMM_I2C
 #include <Wire.h>
@@ -38,6 +32,7 @@ esp_now_peer_info_t peerInfo;
 
 //#define PICO
 //#define MATRIX
+//#define S3LITE
 
 #define SET3
 
@@ -285,7 +280,7 @@ void setup() {
   FastLED.show();
 
 #ifdef COMM_I2C
-#if defined(PICO) || defined(ATOMS3)
+#if defined(PICO) || defined(S3LITE)
   Wire.begin(i2c_slave_address, SUB_SDA, SUB_SCL);
 #else
   Wire.begin(i2c_slave_address);
