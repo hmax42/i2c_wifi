@@ -15,7 +15,7 @@
 #ifdef SET1
 #define MAX_NETWORKS 500
 // 1..6
-#define NODEID 5
+#define NODEID 1
 #if NODEID==1
 const int channels[] = {1, 12};
 #elif NODEID==2
@@ -101,15 +101,17 @@ const int i2c_slave_address = 0x55;
 #define SUB_SCL 1
 
 #else
+//pico + atom lite
 #define LED_PIN 27
 
 #ifdef PICO
 #define SUB_SDA 32
 #define SUB_SCL 33
-#endif
+#else
+//default atom lite + MATRIX
 
 #endif
-
+#endif
 #endif
 
 NetworkInfo networks[MAX_NETWORKS];
@@ -150,6 +152,7 @@ void OnDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len) {
   if(!scan) {
     scan = true;
     blinkLEDGreen();
+    Serial.println("Starting to scan...");
   }
 }
 
@@ -310,10 +313,15 @@ void setup() {
 #if defined(PICO) || defined(S3LITE) || defined(C3)
   Wire.begin(i2c_slave_address, SUB_SDA, SUB_SCL, 400000);
 #else
+  //MATRIX + default lite
   Wire.begin(i2c_slave_address);
 #endif
   Wire.onRequest(requestEvent);
+#if defined(PICO) || defined(S3LITE) || defined(C3)
+  Serial.println("[SLAVE] I2C initialized on configured port");
+#else
   Serial.println("[SLAVE] I2C initialized");
+#endif
 #endif
 
 #ifdef enableBLE
@@ -330,6 +338,7 @@ void setup() {
 
 void loop() {
   if (!scan) {
+    Serial.println("Not scanning...");
     blinkLEDRed();
     return;
   }
@@ -420,7 +429,7 @@ void requestEvent() {
   if (!scan) {
     //only start scanning if dom is ready
     scan = true;
-
+    Serial.println("Starting to scan...");
   }
   if (currentNetworkIndex < networkCount) {
     Wire.write((byte*)&networks[currentNetworkIndex], sizeof(NetworkInfo));
