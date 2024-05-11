@@ -28,7 +28,7 @@
 //
 //
 
-//#define TESTMODE
+#define TESTMODE
 
 // CHOOSE COMMUNICATION
 #define COMM_I2C
@@ -371,9 +371,9 @@ void OnDataSent(const uint8_t* mac_addr, esp_now_send_status_t status) {
 
 void setup() {
 #ifdef S3
+#ifdef S3OLED
   auto cfg = M5.config();
   AtomS3.begin(cfg);
-#ifdef S3OLED
   //  AtomS3.Display.setTextFont(&fonts::TomThumb);
   //  AtomS3.Display.setTextSize(2);
   AtomS3.Display.setTextFont(&fonts::FreeSerif9pt7b);
@@ -684,11 +684,13 @@ void tcaselect(uint8_t i) {
 }
 
 bool requestNetworkData(uint8_t port) {
-  Wire.requestFrom(i2c_slave_address, sizeof(NetworkInfo));
   blinkLEDWhite();
+  Wire.requestFrom(i2c_slave_address, sizeof(NetworkInfo));
   if (Wire.available() < sizeof(NetworkInfo)) {
+    Serial.println("nothing");
     return false;
   }
+  Serial.println("reading");
   Wire.readBytes((byte*)&receivedNetworks[port], sizeof(NetworkInfo));
   if (receivedNetworks[port].channel > 14) {
     //    Serial.println("[MASTER] Dropping network");
