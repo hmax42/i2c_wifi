@@ -19,11 +19,20 @@
 
 */
 //if no sd, do not abort setup, but skip gps and directly start espnow
+//
+//     Testmode | SD found | wait for GPS fix
+//        true       true      false  
+//        true       false     false  
+//        false      true      true
+//        false      false     true
+//
+//
+
 //#define TESTMODE
 
 // CHOOSE COMMUNICATION
-//#define COMM_I2C
-#define COMM_NOW
+#define COMM_I2C
+//#define COMM_NOW
 
 // CHOOSE WEBSERVER
 //#define DomServer
@@ -32,6 +41,8 @@
 //#define S3OLED
 #define S3LITE
 //#define ATOMLITE
+
+//Extras
 #define MiniOLED
 
 #include <WiFi.h>
@@ -82,7 +93,7 @@ const unsigned char hydra [] PROGMEM = {
 #endif
 #ifdef S3OLED
 //128x128
-const unsigned char hydra [] PROGMEM = {
+const unsigned char hydralarge [] PROGMEM = {
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -215,10 +226,16 @@ const unsigned char hydra [] PROGMEM = {
 #endif
 
 #ifdef COMM_NOW
+#define FILEPREFIX "espnow-"
 #include <esp_now.h>
 //how often to send the msg to subs to start scanning (in case a sub reboots or is rebooted)
 //1 min = 60000
 #define BROADCASTINTERVALL 60000
+#endif
+
+#ifdef COMM_I2C
+#define FILEPREFIX "car-i2c-"
+//#define FILEPREFIX "porta-i2c-"
 #endif
 
 #include <SPI.h>
@@ -229,8 +246,6 @@ const unsigned char hydra [] PROGMEM = {
 #define S3
 int const blinkSize = 10;
 int const centerText = 3;
-int fg = WHITE;
-int bg = BLACK;
 bool fileInit = false;
 #define DISPLAYTIME 15000
 #endif
@@ -271,6 +286,10 @@ CRGB led;
 #include <M5AtomS3.h>
 #endif
 
+#ifdef S3OLED
+int fg = WHITE;
+int bg = BLACK;
+#endif
 
 TinyGPSPlus gps;
 #ifdef DomServer
@@ -362,7 +381,8 @@ void setup() {
   AtomS3.Display.fillScreen(bg);
   AtomS3.Display.setTextColor(fg);
 #endif
-#else
+#endif
+#ifdef LITE
   FastLED.addLeds<WS2812, LED_PIN, GRB>(&led, 1);
   led = CRGB::Black;
   FastLED.show();
@@ -600,7 +620,7 @@ void loop() {
 #ifdef DomServer
       totalNetworksSent[port]++;
 #endif
-#ifdef S3OLED
+#ifdef S3OLED || defined(MiniOLED)
       countNetworks[receivedNetworks[port].channel]++;
 #endif
       logData(receivedNetworks[port], port);
@@ -692,7 +712,7 @@ void waitForGPSFix() {
       gps.encode(GPSSERIAL.read());
     }
 
-#ifdef S3OLED
+#ifdef S3OLED || defined(MiniOLED)
     processButton();
 #endif
     // Non-blocking LED blink
@@ -726,7 +746,7 @@ void initializeFile() {
           gps.date.year(), gps.date.month(), gps.date.day());
 
   do {
-    fileName = "/wifi-scans-" + String(fileDateStamp) + String(fileNumber) + ".csv";
+    fileName = String("/") + String(FILEPREFIX) + String("wifi-scans-") + String(fileDateStamp) + String(fileNumber) + String(".csv");
     isNewFile = !SD.exists(fileName);
     fileNumber++;
   } while (!isNewFile);
