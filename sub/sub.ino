@@ -3,18 +3,19 @@
 #define COMM_I2C
 //#define COMM_NOW
 
-// CHOOSE HARDWARE
+// CHOOSE HARDWARE: default LITE
 //#define PICO
 //#define MATRIX
-#define S3LITE
+//#define S3LITE
+//#define C3
 
 // CHOOSE NODE & CHANNEL DISTRIBUTION
-#define SET3
+#define SET1
 
 #ifdef SET1
 #define MAX_NETWORKS 500
 // 1..6
-#define NODEID 2
+#define NODEID 5
 #if NODEID==1
 const int channels[] = {1, 12};
 #elif NODEID==2
@@ -34,15 +35,21 @@ const int channels[] = {10, 11};
 
 #ifdef SET3
 #define MAX_NETWORKS 400
-// 1..3
-#define NODEID 3
+// 1..6
+#define NODEID 6
 #if NODEID==1
-const int channels[] = {1, 2, 3, 4, 5};
+const int channels[] = {1, 2};
 #elif NODEID==2
-const int channels[] = {6, 7, 8, 9, 10};
+const int channels[] = {3, 4, 5};
 #elif NODEID==3
+const int channels[] = {6, 7};
+#elif NODEID==4
+const int channels[] = {8, 9, 10};
+#elif NODEID==5
+const int channels[] = {11, 12};
+#elif NODEID==6
+const int channels[] = {13, 14};
 #define enableBLE
-const int channels[] = {11, 12, 13, 14};
 #endif
 #endif
 
@@ -79,17 +86,32 @@ volatile bool scan = false;
 #ifdef COMM_I2C
 const int i2c_slave_address = 0x55;
 #endif
+
+#ifdef C3
+#define LED_PIN 2
+//#define SUB_SDA 19
+//#define SUB_SCL 18
+#define SUB_SDA 1
+#define SUB_SCL 0
+#else
+
 #ifdef S3LITE
 #define LED_PIN 35
 #define SUB_SDA 2
 #define SUB_SCL 1
+
 #else
 #define LED_PIN 27
+
 #ifdef PICO
 #define SUB_SDA 32
 #define SUB_SCL 33
 #endif
+
 #endif
+
+#endif
+
 NetworkInfo networks[MAX_NETWORKS];
 int networkCount = 0;
 int currentNetworkIndex = 0;
@@ -285,8 +307,8 @@ void setup() {
   FastLED.show();
 
 #ifdef COMM_I2C
-#if defined(PICO) || defined(S3LITE)
-  Wire.begin(i2c_slave_address, SUB_SDA, SUB_SCL);
+#if defined(PICO) || defined(S3LITE) || defined(C3)
+  Wire.begin(i2c_slave_address, SUB_SDA, SUB_SCL, 400000);
 #else
   Wire.begin(i2c_slave_address);
 #endif
@@ -308,6 +330,7 @@ void setup() {
 
 void loop() {
   if (!scan) {
+    blinkLEDRed();
     return;
   }
   int savedNetworks = 0;
@@ -443,6 +466,10 @@ void setLed(CRGB c) {
   }
 }
 
+void blinkLEDRed() {
+  setLed(CRGB::Red);
+  blinkLED();
+}
 void blinkLEDWhite() {
   setLed(CRGB::White);
   blinkLED();
@@ -484,7 +511,7 @@ void blinkLED() {
       led[8] = c;
       led[11] = c;
       led[13] = c;
-      led[1] = c;
+      led[16] = c;
       led[17] = c;
       led[18] = c;
     }
