@@ -28,7 +28,7 @@
 //
 //
 
-#define TESTMODE
+//#define TESTMODE
 
 // CHOOSE COMMUNICATION
 #define COMM_I2C
@@ -43,17 +43,25 @@
 //#define ATOMLITE
 
 //Extras
-#define MiniOLED
+//conflicts with comm_IO2c
+//#define MiniOLED
 
 #include <WiFi.h>
 #ifdef DomServer
 #include <WebServer.h>
 #ifdef S3LITE
-#define DOM_SSID "PicoHydra"
+#ifdef MiniOLED
+#define DOM_SSID "MiniHydra"
 #define DOM_PASS "12345678"
 #else
+#define DOM_SSID "PicoHydra"
+#define DOM_PASS "12345678"
+#endif
+#else
+#ifdef S3OLED
 #define DOM_SSID "OledHydra"
 #define DOM_PASS "12345678"
+#endif
 #endif
 #endif
 
@@ -302,6 +310,7 @@ String fileName;
 const char* ssid = DOM_SSID;
 const char* password = DOM_PASS;
 #endif
+
 #ifdef COMM_I2C
 const int i2c_slave_address = 0x55;
 #define TCAADDR 0x70

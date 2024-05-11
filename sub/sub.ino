@@ -338,7 +338,6 @@ void setup() {
 
 void loop() {
   if (!scan) {
-    Serial.println("Not scanning...");
     blinkLEDRed();
     return;
   }
@@ -429,7 +428,10 @@ void requestEvent() {
   if (!scan) {
     //only start scanning if dom is ready
     scan = true;
+    blinkLEDGreen();
     Serial.println("Starting to scan...");
+    //nothing there yet
+    return;
   }
   if (currentNetworkIndex < networkCount) {
     Wire.write((byte*)&networks[currentNetworkIndex], sizeof(NetworkInfo));
