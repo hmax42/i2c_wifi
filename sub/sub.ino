@@ -3,14 +3,18 @@
 #define COMM_I2C
 //#define COMM_NOW
 
-// CHOOSE HARDWARE: default LITE
-//#define PICO
+// CHOOSE HARDWARE: default ATOM LITE
 //#define MATRIX
+
+//not working on i2c
 //#define S3LITE
+//#define PICO
 //#define C3
+//#define C6
+//#define STAMPS3
 
 // CHOOSE NODE & CHANNEL DISTRIBUTION
-#define SET1
+#define SET2
 
 #ifdef SET1
 #define MAX_NETWORKS 500
@@ -30,6 +34,29 @@ const int channels[] = {9, 14};
 #define enableBLE
 #elif NODEID==6
 const int channels[] = {10, 11};
+#endif
+#endif
+
+#ifdef SET2
+#define MAX_NETWORKS 500
+// 1..8
+#define NODEID 1
+#if NODEID==1
+const int channels[] = {1};
+#elif NODEID==2
+const int channels[] = {2, 3};
+#elif NODEID==3
+const int channels[] = {4, 5};
+#elif NODEID==4
+const int channels[] = {6};
+#elif NODEID==5
+const int channels[] = {7, 8};
+#elif NODEID==6
+const int channels[] = {9, 10};
+#elif NODEID==7
+const int channels[] = {11};
+#elif NODEID==8
+const int channels[] = {12, 13, 14};
 #endif
 #endif
 
@@ -63,7 +90,9 @@ const int channels[] = {13, 14};
 #endif
 
 #include <WiFi.h>
+#ifndef C6
 #include <FastLED.h>
+#endif
 
 struct NetworkInfo {
   char ssid[32];
@@ -72,7 +101,7 @@ struct NetworkInfo {
   char security[20];
   uint8_t channel;
   char type;
-#ifdef COMM_NOW  
+#ifdef COMM_NOW
   int boardId;
 #endif
 };
@@ -89,10 +118,12 @@ const int i2c_slave_address = 0x55;
 
 #ifdef C3
 #define LED_PIN 2
-//#define SUB_SDA 19
-//#define SUB_SCL 18
-#define SUB_SDA 1
-#define SUB_SCL 0
+//Grove USB (right)
+#define SUB_SDA 19
+#define SUB_SCL 18
+//Grove ADC (left)
+//#define SUB_SDA 1
+//#define SUB_SCL 0
 #else
 
 #ifdef S3LITE
@@ -108,8 +139,24 @@ const int i2c_slave_address = 0x55;
 #define SUB_SDA 32
 #define SUB_SCL 33
 #else
+#ifdef C6
+#define LED_PIN 20
+#define LED_PWR 19
+#define LED_BLUE 7
+#define BTN 9
+#define SUB_SDA 2
+#define SUB_SCL 1
+#else
+#ifdef STAMPS3
+#define LED_PIN 21
+#define SUB_SDA 13
+#define SUB_SCL 15
+#else
 //default atom lite + MATRIX
-
+#define SUB_SDA 26
+#define SUB_SCL 32
+#endif
+#endif
 #endif
 #endif
 #endif
@@ -117,12 +164,14 @@ const int i2c_slave_address = 0x55;
 NetworkInfo networks[MAX_NETWORKS];
 int networkCount = 0;
 int currentNetworkIndex = 0;
+#ifndef C6
 #ifdef MATRIX
 const int numLeds = 25;
 #else
 const int numLeds = 1;
 #endif
 CRGB led[numLeds];
+#endif
 
 const int channelCount = (sizeof(channels) / sizeof(channels[0]));
 
@@ -149,7 +198,7 @@ void OnDataSent(const uint8_t* mac_addr, esp_now_send_status_t status) {
 
 //callback to enable scanning
 void OnDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len) {
-  if(!scan) {
+  if (!scan) {
     scan = true;
     blinkLEDGreen();
     Serial.println("Starting to scan...");
@@ -301,27 +350,40 @@ void setup() {
   }
   Serial.println("[SLAVE] ESP-NOW initialized");
 #endif
-
+#ifndef C6
   FastLED.addLeds<WS2812, LED_PIN, GRB>(led, numLeds);
 #ifdef MATRIX
   FastLED.setBrightness(32);
 #endif
   setLed(CRGB::Black);
   FastLED.show();
+#endif
+
 
 #ifdef COMM_I2C
-#if defined(PICO) || defined(S3LITE) || defined(C3)
   Wire.begin(i2c_slave_address, SUB_SDA, SUB_SCL, 400000);
-#else
-  //MATRIX + default lite
-  Wire.begin(i2c_slave_address);
-#endif
+  Serial.println("Configured on i2c with 400k");
+
+
+//#if defined(PICO) || defined(S3LITE)|| defined(STAMPS3) || defined(C3)
+//  Serial.println("Configured on i2c with 400k");
+//  Wire.begin(i2c_slave_address, SUB_SDA, SUB_SCL, 400000);
+//#else
+//#ifdef C3
+//  Wire.begin(i2c_slave_address, SUB_SDA, SUB_SCL, 400000);
+//#else
+//  //MATRIX + default lite
+//  Serial.println("Configured on i2c");
+//  Wire.begin(i2c_slave_address);
+//  Wire.begin(i2c_slave_address, SUB_SDA, SUB_SCL, 400000);
+//#endif
+//#endif
   Wire.onRequest(requestEvent);
-#if defined(PICO) || defined(S3LITE) || defined(C3)
-  Serial.println("[SLAVE] I2C initialized on configured port");
-#else
-  Serial.println("[SLAVE] I2C initialized");
-#endif
+//#if defined(PICO) || defined(S3LITE)|| defined(STAMPS3) || defined(C3)
+//  Serial.println("[SLAVE] I2C initialized on configured port");
+//#else
+//  Serial.println("[SLAVE] I2C initialized");
+//#endif
 #endif
 
 #ifdef enableBLE
@@ -387,7 +449,7 @@ void addBleNetwork(const String& ssid, const String& bssid, int32_t rssi) {
 
 void addWifiNetwork(const String& ssid, const String& bssid, int32_t rssi, wifi_auth_mode_t encryptionType, uint8_t channel) {
   if (addNetwork(ssid, bssid, rssi, getAuthType(encryptionType), channel, 'w')) {
-    Serial.println("[SLAVE] Added wifi network: SSID: " + ssid + ", BSSID: " + bssid + ", RSSI: " + String(rssi) + ", Security: " + encryptionType + ", Channel: " + String(channel));
+    Serial.println("[SLAVE] Added wifi network: SSID: \"" + ssid + "\", BSSID: \"" + bssid + "\", RSSI: " + String(rssi) + ", Security: " + encryptionType + ", Channel: " + String(channel));
 #ifdef COMM_NOW
     esp_now_send(broadcastAddress, (uint8_t*)&networks[currentNetworkIndex], sizeof(NetworkInfo));
     Serial.println("[SLAVE] Sending network via espnow: " + String(networks[currentNetworkIndex].ssid));
@@ -431,15 +493,28 @@ void requestEvent() {
     blinkLEDGreen();
     Serial.println("Starting to scan...");
     //nothing there yet
+//#if defined(PICO) || defined(S3LITE)|| defined(STAMPS3) || defined(C3)
+//    //send dummy data
+//    for (int i=0;i< sizeof(NetworkInfo);i++) {
+//      byte d = 0xf;
+//      Wire.slaveWrite((byte*)&d,1);
+//    }
+//#endif    
     return;
   }
   if (currentNetworkIndex < networkCount) {
-    Wire.write((byte*)&networks[currentNetworkIndex], sizeof(NetworkInfo));
-    Serial.println("[SLAVE] Sending network: " + String(networks[currentNetworkIndex].ssid));
+//#if defined(PICO) || defined(S3LITE)|| defined(STAMPS3) || defined(C3)
+//    //FIXME either way doesn't work ??
+    Wire.slaveWrite((byte*)&networks[currentNetworkIndex], sizeof(NetworkInfo));
+//#else
+    //works for atom lite
+//    Wire.write((byte*)&networks[currentNetworkIndex], sizeof(NetworkInfo));
+//#endif    
+    //Serial.println("[SLAVE] Sending network: " + String(networks[currentNetworkIndex].ssid) + " as " + String(sizeof(NetworkInfo)) + " bytes ");
     currentNetworkIndex++;
     blinkLEDWhite();
   } else {
-    Serial.println("[SLAVE] No new networks to send");
+    //Serial.println("[SLAVE] No new networks to send");
     currentNetworkIndex = 0;
     networkCount = 0;
   }
@@ -471,31 +546,42 @@ const char* getAuthType(uint8_t wifiAuth) {
   }
 }
 
+#ifndef C6
 void setLed(CRGB c) {
   for (int i = 0; i < numLeds; i++) {
     led[i] = c;
   }
 }
+#endif
 
 void blinkLEDRed() {
+#ifndef C6
   setLed(CRGB::Red);
   blinkLED();
+#endif
 }
 void blinkLEDWhite() {
+#ifndef C6
   setLed(CRGB::White);
   blinkLED();
+#endif
 }
 void blinkLEDGreen() {
+#ifndef C6
   setLed(CRGB::Green);
   blinkLED();
+#endif
 }
 void blinkLEDBlue() {
+#ifndef C6
   setLed(CRGB::Blue);
   blinkLED();
+#endif
 }
 
 //blink on matrix takes 3 times the blink on lite
 void blinkLED() {
+#ifndef C6
   int d = 50;
 #ifdef MATRIX
   CRGB c = led[0];
@@ -541,6 +627,7 @@ void blinkLED() {
   setLed(CRGB::Black);
 #endif
   FastLED.show();
+#endif
 }
 
 void updateTimePerChannel(int channel, int networksFound) {
