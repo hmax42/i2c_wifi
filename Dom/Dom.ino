@@ -315,8 +315,10 @@ const char* password = DOM_PASS;
 const int i2c_slave_address = 0x55;
 #define TCAADDR 0x70
 #endif
-#define NUM_PORTS 6
-#if defined(S3OLED) || defined(MiniOLED)
+
+#define NUM_PORTS 6 //8 //2 //6
+#if defined(S3OLED) || defined(MiniOLED) || defined(COREFIRE)
+
 bool oled = true;
 #endif
 #ifdef MiniOLED
