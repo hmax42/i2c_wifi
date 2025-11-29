@@ -6,23 +6,31 @@
    ^----------------------------------------------------------------------------------------------^
    |  Hardware                     | Dom | Sub | I2C | ESP-now | Notes                            |
    |  Atom Lite                    |  x  |  x  |  x  |    ?    |                                  |
+   |  Core                         |  x  |  ?  |  x  |    ?    | GPSv2 both variants              |
    |  Atom (Lite) Matrix           |  ?  |  x! |  x  |    ?    | why u no work                    |
    |  Atom (Lite) Echo             |  -  |  ?  |  ?  |    x    | i2s conflicts spi & gps serial   |
-   |  Atom S3 (Lite) Oled          |  x! |  ?  |  x  |    ?    |                                  |
-   |  Atom S3 Lite                 |  x  |  ?  |  x  |    x    | ch5,7,8 nothing found            |
-   |  Stamp (Mate)                 |  ?  |  x  |  -  |    x    | i2c slave error                  |
-   |  Stamp (C3)                   |  ?  |  ?  |  -  |    x    | i2c slave error                  |
-   |  Stamp (S3)                   |  ?  |  ?  |  -  |    ?    | untested (i2c slave error)       |
+   |  Atom S3 (Lite) Oled          |  x  |  ?  | +/- |    ?    |                                  |
+   |  Atom S3 Lite                 |  x  |  ?  | +/- |    x    |                                  |
+   |  Stamp (Mate)                 |  ?  |  x  |  -  |    x    |                                  |
+   |  Stamp (C3)                   |  ?  |  ?  |  ?  |    x    |                                  |
+   |  Stamp (S3)                   |  ?  |  ?  |  ?  |    ?    |                                  |
+   |  Atom C6                      |  ?  |  ?  |  ?  |    ?    |                                  |
    |                               |     |     |     |         |                                  |
    °----------------------------------------------------------------------------------------------°
 
+  all RiSC-V not working as i2c slave, as well as pico.
+  all of these do not expose the default i2c via the grove connector, except the stamps3
+  atoms3lite:check m5stack profile and ESP32 profile
+  i2c request is received and data is "sent" but received as garbage at dom (freq 100k and 400k)
+
+  disable usb cdc for logging on serial usb (c3)
 
 */
 //if no sd, do not abort setup, but skip gps and directly start espnow
 //
 //     Testmode | SD found | wait for GPS fix
-//        true       true      false  
-//        true       false     false  
+//        true       true      false
+//        true       false     false
 //        false      true      true
 //        false      false     true
 //
@@ -38,12 +46,16 @@
 //#define DomServer
 
 // CHOOSE HARDWARE
-//#define S3OLED
-#define S3LITE
+#define S3OLED
+//#define S3LITE
 //#define ATOMLITE
+//#define COREFIRE
+
+//#define S3CAR
+#define S3PORTA
 
 //Extras
-//conflicts with comm_IO2c
+//conflicts with comm_I2c
 //#define MiniOLED
 
 #include <WiFi.h>
@@ -61,9 +73,43 @@
 #ifdef S3OLED
 #define DOM_SSID "OledHydra"
 #define DOM_PASS "12345678"
+#else
+#ifdef COREFIRE
+#define DOM_SSID "CoreHydra"
+#define DOM_PASS "12345678"
 #endif
 #endif
 #endif
+#endif
+
+#ifdef COMM_NOW
+#define FILEPREFIX "espnow-"
+#include <esp_now.h>
+//how often to send the msg to subs to start scanning (in case a sub reboots or is rebooted)
+//1 min = 60000
+#define BROADCASTINTERVALL 60000
+#endif
+
+#ifdef COMM_I2C
+  #ifdef S3LITE
+    #define FILEPREFIX "car-i2c-"
+  #else
+    #ifdef S3OLED
+      #ifdef S3PORTA
+        #define FILEPREFIX "porta-i2c-"
+      #else
+        #ifdef S3CAR
+          #define FILEPREFIX "car-i2c-"
+        #endif
+      #endif
+    #else
+      #ifdef COREFIRE
+        #define FILEPREFIX "core-i2c-"
+      #endif
+    #endif
+  #endif
+#endif
+
 
 #include <Wire.h>
 
@@ -72,6 +118,8 @@
 #endif
 #ifdef MiniOLED
 #include "SSD1306Wire.h"
+#endif
+#if defined(MiniOLED) || defined(S3OLED)
 //72x42
 const unsigned char hydra [] PROGMEM = {
   0x00, 0x00, 0x00, 0x00, 0x3e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x7e, 0x00, 0x00,
@@ -233,18 +281,6 @@ const unsigned char hydralarge [] PROGMEM = {
 };
 #endif
 
-#ifdef COMM_NOW
-#define FILEPREFIX "espnow-"
-#include <esp_now.h>
-//how often to send the msg to subs to start scanning (in case a sub reboots or is rebooted)
-//1 min = 60000
-#define BROADCASTINTERVALL 60000
-#endif
-
-#ifdef COMM_I2C
-#define FILEPREFIX "car-i2c-"
-//#define FILEPREFIX "porta-i2c-"
-#endif
 
 #include <SPI.h>
 #include <SD.h>
@@ -277,10 +313,6 @@ const int LED_PIN = 35;
 const int LED_PIN = 27;
 #endif
 
-#ifdef LITE
-#include <FastLED.h>
-CRGB led;
-#endif
 
 #ifdef S3
 #define SUB_SDA 2
@@ -294,9 +326,47 @@ CRGB led;
 #include <M5AtomS3.h>
 #endif
 
-#ifdef S3OLED
+#ifdef COREFIRE
+#define WHITE 0xFFFF
+#define BLACK 0x0000
+#endif
+
+#if defined(S3OLED) || defined(COREFIRE)
 int fg = WHITE;
 int bg = BLACK;
+#endif
+
+#ifdef COREFIRE
+#include <M5Stack.h>
+#define SUB_SDA 21
+#define SUB_SCL 22
+#define GPS_RX 16
+#define SD_CLK 18
+#define SD_MISO 19
+#define SD_MOSI 23
+#define SD_CS 4
+#define BTN 39
+#define GPSSERIAL Serial2
+#define GPSBAUD 115200
+const int LED_PIN = //15;
+  26; //ext? PORT B
+#define LITE
+
+#define DISPLAYTIME 2500
+
+#endif
+
+#ifdef LITE
+#include <FastLED.h>
+CRGB led;
+#endif
+
+#ifndef SD_CS
+#define SD_CS -1
+#endif
+
+#ifndef GPSBAUD
+#define GPSBAUD 9600
 #endif
 
 TinyGPSPlus gps;
@@ -315,19 +385,12 @@ const char* password = DOM_PASS;
 const int i2c_slave_address = 0x55;
 #define TCAADDR 0x70
 #endif
-#define NUM_PORTS 6
-#if defined(S3OLED) || defined(MiniOLED)
+
+#define NUM_PORTS 8 //2 //6
+#if defined(S3OLED) || defined(MiniOLED) || defined(COREFIRE)
 bool oled = true;
 #endif
-#ifdef MiniOLED
-const int oled_i2c_slave_address = 0x3c;
-SSD1306Wire  display(oled_i2c_slave_address, SUB_SDA , SUB_SCL);
-int x = 28;
-//int y = 24; //vertically "flipped"
-int y = 0;
-int currentChannelOled = 0;
-#define DISPLAYTIME 1500
-#endif
+
 
 struct NetworkInfo {
   char ssid[32];
@@ -343,43 +406,71 @@ struct NetworkInfo {
 
 NetworkInfo receivedNetworks[NUM_PORTS];
 
-#ifdef DomServer
-int totalNetworksSent[NUM_PORTS] = { 0 };
-#endif
-#if defined(S3OLED) || defined(MiniOLED)
-// 0 is BLE
-int countNetworks[15] = {0};
-#endif
-
-
 #ifdef COMM_NOW
 uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 esp_now_peer_info_t peerInfo;
 long lastBroadcastMillis = -1;
 NetworkInfo myData;
+uint8_t dummy = 0;
+#endif
 
-// Callback function that will be executed when data is received
-void OnDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len) {
-  memcpy(&myData, incomingData, sizeof(myData));
-  int node = myData.boardId;
-  Serial.println("Received " + String(myData.ssid));
 #ifdef DomServer
-  totalNetworksSent[node]++;
+int totalNetworksSent[NUM_PORTS] = { 0 };
 #endif
-#if defined(S3OLED) || defined(MiniOLED)
-  countNetworks[myData.channel]++;
-#endif
-  logData(myData, node);
-}
 
-void OnDataSent(const uint8_t* mac_addr, esp_now_send_status_t status) {
-  Serial.print("\r\nLast Packet Send Status:\t");
-  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Delivery Success" : "Delivery Fail");
-}
+#ifdef MiniOLED
+const int oled_i2c_slave_address = 0x3c;
+SSD1306Wire  display(oled_i2c_slave_address, SUB_SDA , SUB_SCL);
+int x = 28;
+//int y = 24; //vertically "flipped"
+int y = 0;
+int currentChannelOled = 0;
+#define DISPLAYTIME 1500
 #endif
+#if defined(S3OLED)
+int x = 0;
+int y = 0;
+#endif
+
+#if defined(S3OLED) || defined(MiniOLED) || defined(COREFIRE)
+// 0 is BLE
+int countNetworks[15] = {0};
+#endif
+
+
+void processButton();
+void waitForGPSFix();
+void initializeFile();
+#ifdef COMM_NOW
+void OnDataRecv(const uint8_t* mac, const uint8_t* incomingData, int len);
+void OnDataSent(const uint8_t* mac_addr, esp_now_send_status_t status);
+void sendSubMsg();
+#endif
+#ifdef DomServer
+void handleRoot();
+void handleData();
+#endif
+#ifdef COMM_I2C
+void tcaselect(uint8_t i);
+bool requestNetworkData(uint8_t port);
+void drawFileStatus();
+void drawStatus(bool active, char letter, int dx, int text);
+#endif
+#if defined(S3OLED) || defined(MiniOLED) || defined(COREFIRE)
+void draw(bool update);
+void updateScreen();
+void draw();
+#endif
+void blinkLEDWhite();
+void blinkLEDRed();
+void blinkLEDGreen();
+void blinkLEDPurple();
+void blinkLED();
+
+
 
 void setup() {
-#ifdef S3
+
 #ifdef S3OLED
   auto cfg = M5.config();
   AtomS3.begin(cfg);
@@ -389,17 +480,29 @@ void setup() {
   AtomS3.Display.setTextSize(1);
   AtomS3.Display.fillScreen(bg);
   AtomS3.Display.setTextColor(fg);
+  AtomS3.Display.setRotation(1); //porta
+  AtomS3.Display.setRotation(3); //car
+
+  AtomS3.Display.clear();
+  AtomS3.Display.drawRect(x + 0, y + 0, 128, 128);
+  AtomS3.Display.drawBitmap(x + 0, y + 0, hydralarge, 128, 128, WHITE);
+  AtomS3.Display.display();
 #endif
-#endif
+  Serial.begin(115200);
+
 #ifdef LITE
   FastLED.addLeds<WS2812, LED_PIN, GRB>(&led, 1);
   led = CRGB::Black;
   FastLED.show();
-  Serial.begin(115200);
 #endif
 #ifdef S3OLED
   drawGPSStatus();
   drawFileStatus();
+#endif
+#ifdef COREFIRE
+  M5.begin();        // Init M5Core
+  M5.Power.begin();  // Init Power module
+  FastLED.setBrightness(40);
 #endif
 #ifdef DomServer
   WiFi.softAP(ssid, password);
@@ -410,7 +513,7 @@ void setup() {
   server.begin();
 #endif
 #if defined(COMM_I2C) || defined(MiniOLED)
-  Wire.begin(SUB_SDA , SUB_SCL);  // SDA, SCL
+  Wire.begin(SUB_SDA , SUB_SCL, 400000);  // SDA, SCL
   Serial.println("[MASTER] I2C Master Initialized");
 #endif
 #ifdef MiniOLED
@@ -425,28 +528,36 @@ void setup() {
   display.drawXbm(x + 0, y + 0, 72, 40, hydra);
   display.display();
 #endif
-
   SPI.begin(SD_CLK, SD_MISO, SD_MOSI, -1);  // Initialize SPI for SD card
+#ifdef COREFIRE
+  if (!SD.begin(SD_CS)) {
+#else
   if (!SD.begin()) {
+#endif
     Serial.println("SD Card initialization failed!");
     unsigned long startMillis = millis();
     const unsigned long blinkInterval = 500;
     while (millis() - startMillis < 5000) {  // Continue blinking for 5 seconds
-#if defined(S3OLED) || defined(MiniOLED)
+#if defined(S3OLED) || defined(MiniOLED) || defined(COREFIRE)
       processButton();
 #endif
-      if (((millis() - startMillis) / blinkInterval) % 2  == 1 ) {
-        blinkLEDRed();
-      }
+      //int      if (((millis() - startMillis) / blinkInterval) % 2  == 1 ) {
+      blinkLEDRed();
     }
-    Serial.println("Starting without SD Card, no GPS fix and no proper file initialization.");
-#ifndef TESTMODE
-    return;
+#ifdef COREFIRE
+  } else {
+#else
+  } else {
 #endif
+    Serial.println("SD Card initialized.");
   }
+#ifdef TESTMODE
+  Serial.println("Starting without GPS fix and no proper file initialization.");
+  return;
+#endif
+
 #ifndef TESTMODE
-  Serial.println("SD Card initialized.");
-  GPSSERIAL.begin(9600, SERIAL_8N1, GPS_RX, -1);  // GPS Serial
+  GPSSERIAL.begin(GPSBAUD, SERIAL_8N1, GPS_RX, -1);  // GPS Serial
   waitForGPSFix();
 
   initializeFile();
@@ -480,142 +591,15 @@ void setup() {
 #endif
 }
 
-#ifdef COMM_NOW
-uint8_t dummy = 0;
-
-void  sendSubMsg() {
-  esp_now_send(broadcastAddress, (uint8_t*)&dummy, sizeof(dummy));
-  lastBroadcastMillis = millis();
-}
-#endif
-
-#if defined(S3OLED) || defined(MiniOLED)
-long displayUpdateDelay = DISPLAYTIME;
-long lastDisplayUpdate = - DISPLAYTIME;
-
-void updateScreen() {
-  if (!oled) return;
-  bool update = (displayUpdateDelay + lastDisplayUpdate) < millis();
-  draw(update);
-}
-
-void draw() {
-  if (!oled) return;
-  draw(true);
-}
-
-void processButton() {
-  AtomS3.update();
-
-  if (AtomS3.BtnA.wasReleased()) {
-    oled = !oled;
-    if (!oled) {
-#ifdef S3OLED
-      AtomS3.Display.clearDisplay();
-#endif
-#ifdef MiniOLED
-      display.clear();
-      display.display();
-      display.displayOff();
-    } else {
-      display.displayOn();
-#endif
-    }
-  }
-}
-#endif
-
-#ifdef S3OLED
-void drawGPSStatus() {
-  if (!oled) return;
-  drawStatus(gps.location.isValid(), 'G', 3, MAGENTA);
-}
-
-void drawFileStatus() {
-  if (!oled) return;
-  drawStatus(fileInit, 'F', 2, RED);
-}
-
-// text and back are switched if active
-void drawStatus(bool active, char letter, int dx, int text) {
-  int x = AtomS3.Display.width() - dx * blinkSize;
-  int y = AtomS3.Display.height() - blinkSize;
-  AtomS3.Display.setTextFont(&fonts::TomThumb);
-  AtomS3.Display.setTextSize(1);
-  AtomS3.Display.fillRect(x, y, blinkSize , blinkSize , active ? text : BLACK);
-  if (!active) {
-    AtomS3.Display.drawRect(x, y, blinkSize , blinkSize , /*active ? BLACK :*/ text);
-  }
-  AtomS3.Display.setTextColor(active ? BLACK : text);
-  AtomS3.Display.drawString(String(letter), x + centerText , y + centerText );
-}
-#endif
-
-#if defined(S3OLED) || defined(MiniOLED)
-void draw(bool update) {
-  if (update) {
-#ifdef S3OLED
-    AtomS3.Display.fillScreen(bg);
-    drawGPSStatus();
-    drawFileStatus();
-    AtomS3.Display.setTextFont(&fonts::FreeSerif9pt7b);
-    AtomS3.Display.setTextSize(1);
-    AtomS3.Display.setTextColor(fg);
-#define COLS 2
-#define ROWS 8
-    int col = 0;
-    int row = 0;
-    for (int i = 0; i < 15 ; i++) {
-      //0 is ble
-      int c = countNetworks[i];
-      String ct = String(c);
-      if (c > 1000) {
-        c = c / 1000;
-        ct = String (c) + "k";
-      }
-      AtomS3.Display.drawString((i == 0 ? String("bt") : ((i < 10 ? "0" : "" ) + String(i))) + " : " + (ct),
-                                col * (AtomS3.Display.width() / COLS),
-                                row * (AtomS3.Display.height() / ROWS));
-
-      col++;
-      if (col > (COLS - 1)) {
-        row++;
-        col = col % COLS;
-      }
-    }
-#else
-    //MiniOLED
-    int c = countNetworks[currentChannelOled];
-    String ct = String(c);
-    if (c > 1000) {
-      c = c / 1000;
-      ct = String (c) + "k";
-    }
-    //Serial.println(String(currentChannelOled) + " : " + ct);
-    display.setFont(ArialMT_Plain_16);
-    display.clear();
-    display.drawRect(x + 0, y + 0, 72, 40);
-    int i = currentChannelOled;
-    display.drawString(x + 0 + 5, y + 10 + 2, (i == 0 ? String("bt") : ((i < 10 ? "0" : "" ) + String(i))) + ":" + ct);
-    display.display();
-    currentChannelOled++;
-    if (currentChannelOled == 15) {
-      currentChannelOled = 0;
-    }
-#endif
-    lastDisplayUpdate = millis();
-  }
-}
-#endif
 
 void loop() {
-#if defined(S3OLED) || defined(MiniOLED)
+#if defined(S3OLED) || defined(MiniOLED) || defined(COREFIRE)
   processButton();
 #endif
 #ifdef DomServer
   server.handleClient();
 #endif
-#if defined(S3OLED) || defined(MiniOLED)
+#if defined(S3OLED) || defined(MiniOLED) || defined(COREFIRE)
   updateScreen();
 #endif
   while (GPSSERIAL.available() > 0) {
@@ -623,13 +607,19 @@ void loop() {
   }
 #ifdef COMM_I2C
   for (uint8_t port = 0; port < NUM_PORTS; port++) {
+    
+    //extra button check for corefire
+#if defined(S3OLED) || defined(MiniOLED) || defined(COREFIRE)
+    processButton();
+#endif
+    //TEST for Stamps without switch
     tcaselect(port);
     blinkLEDWhite();
     if (requestNetworkData(port)) {
 #ifdef DomServer
       totalNetworksSent[port]++;
 #endif
-#ifdef S3OLED || defined(MiniOLED)
+#if defined(S3OLED) || defined(MiniOLED) || defined(COREFIRE)
       countNetworks[receivedNetworks[port].channel]++;
 #endif
       logData(receivedNetworks[port], port);
@@ -647,234 +637,4 @@ void loop() {
     delay(10);
   }
 #endif
-}
-
-#ifdef DomServer
-void handleRoot() {
-  String html = "<!DOCTYPE html><html><head><title>ESP32 Network Stats</title>";
-  html += "<script>";
-  html += "setInterval(function() { fetch('/data').then(response => response.text()).then(data => { document.getElementById('networkStats').innerHTML = data; }); }, 2000);";
-  html += "</script></head><body>";
-  html += "<h1>Network Statistics from Subs</h1>";
-  html += "<div id='networkStats'></div>";
-  html += "</body></html>";
-  server.send(200, "text/html", html);
-}
-
-void handleData() {
-  String data;
-  data += "<h2>GPS Data:</h2>";
-  data += "<p>Latitude: " + String(gps.location.lat(), 6) + "</p>";
-  data += "<p>Longitude: " + String(gps.location.lng(), 6) + "</p>";
-  data += "<p>HDOP: " + String(gps.hdop.value()) + "</p>";
-  data += "<p>Satellites: " + String(gps.satellites.value()) + "</p>";
-
-  for (int i = 0; i < NUM_PORTS; ++i) {
-
-    data += "<h2>Port " + String(i) + ":</h2>";
-    data += "<p>SSID: " + String(receivedNetworks[i].ssid) + "</p>";
-    data += "<p>BSSID: " + String(receivedNetworks[i].bssid) + "</p>";
-    data += "<p>RSSI: " + String(receivedNetworks[i].rssi) + "</p>";
-    data += "<p>Security: " + String(receivedNetworks[i].security) + "</p>";
-    data += "<p>Channel: " + String(receivedNetworks[i].channel) + "</p>";
-    data += "<p>Total Networks Sent: " + String(totalNetworksSent[i]) + "</p>";
-  }
-  server.send(200, "text/plain", data);
-}
-
-#endif
-#ifdef COMM_I2C
-void tcaselect(uint8_t i) {
-  if (i >= NUM_PORTS) return;
-  Wire.beginTransmission(TCAADDR);
-  Wire.write(1 << i);
-  Wire.endTransmission();
-  Serial.println("[MASTER] Switched to I2C port: " + String(i));
-}
-
-bool requestNetworkData(uint8_t port) {
-  blinkLEDWhite();
-  Wire.requestFrom(i2c_slave_address, sizeof(NetworkInfo));
-  if (Wire.available() < sizeof(NetworkInfo)) {
-    Serial.println("nothing");
-    return false;
-  }
-  Serial.println("reading");
-  Wire.readBytes((byte*)&receivedNetworks[port], sizeof(NetworkInfo));
-  if (receivedNetworks[port].channel > 14) {
-    //    Serial.println("[MASTER] Dropping network");
-    return false;
-  }
-  return true;
-}
-#endif
-
-void waitForGPSFix() {
-  unsigned long lastBlink = 0;
-  const unsigned long blinkInterval = 300;  // Time interval for LED blinking
-  bool ledState = false;
-
-  Serial.println("Waiting for GPS fix...");
-#ifdef S3OLED
-  drawGPSStatus();
-#endif
-  while (!gps.location.isValid()) {
-    if (GPSSERIAL.available() > 0) {
-      gps.encode(GPSSERIAL.read());
-    }
-
-#ifdef S3OLED || defined(MiniOLED)
-    processButton();
-#endif
-    // Non-blocking LED blink
-    if (millis() - lastBlink >= blinkInterval) {
-      lastBlink = millis();
-      ledState = !ledState;
-#ifdef S3OLED
-      if (oled)
-        AtomS3.Display.fillRect((AtomS3.Display.width() - blinkSize), (AtomS3.Display.height() - blinkSize) , blinkSize , blinkSize , ledState ? MAGENTA : BLACK);
-#else
-      led = ledState ? CRGB::Purple : CRGB::Black;
-      FastLED.show();
-#endif
-    }
-  }
-
-#ifdef S3OLED
-  drawGPSStatus();
-#endif
-  blinkLEDGreen();
-  Serial.println("GPS fix obtained.");
-}
-
-void initializeFile() {
-  int fileNumber = 0;
-  bool isNewFile = false;
-
-  // create a date stamp for the filename
-  char fileDateStamp[16];
-  sprintf(fileDateStamp, "%04d-%02d-%02d-",
-          gps.date.year(), gps.date.month(), gps.date.day());
-
-  do {
-    fileName = String("/") + String(FILEPREFIX) + String("wifi-scans-") + String(fileDateStamp) + String(fileNumber) + String(".csv");
-    isNewFile = !SD.exists(fileName);
-    fileNumber++;
-  } while (!isNewFile);
-
-  if (isNewFile) {
-    File dataFile = SD.open(fileName, FILE_WRITE);
-    if (dataFile) {
-      dataFile.println("WigleWifi-1.4,appRelease=1.300000,model=GPS Kit,release=1.100000F+00,device=M5ATOMHydra,display=NONE,board=ESP32,brand=M5");
-      dataFile.println("MAC,SSID,AuthMode,FirstSeen,Channel,RSSI,CurrentLatitude,CurrentLongitude,AltitudeMeters,AccuracyMeters,Type");
-      dataFile.close();
-      Serial.println("New file created: " + fileName);
-    }
-  } else {
-    Serial.println("Using existing file: " + fileName);
-  }
-#ifdef S3OLED
-  fileInit = true;
-  drawFileStatus();
-#endif
-}
-
-void logData(const NetworkInfo & network, uint8_t port) {
-#ifdef DomServer
-  if (strcmp(ssid, network.ssid) == 0) {
-    Serial.println("Skip");
-    return;
-  }
-#endif
-  if (gps.location.isValid()) {
-    String utc = String(gps.date.year()) + "-" + gps.date.month() + "-" + gps.date.day() + " " + gps.time.hour() + ":" + gps.time.minute() + ":" + gps.time.second();
-    String dataString = String(network.bssid) + "," + "\"" + network.ssid + "\"" + "," + network.security + "," + utc + "," + String(network.channel) + "," + String(network.rssi) + "," + String(gps.location.lat(), 6) + "," + String(gps.location.lng(), 6) + "," + String(gps.altitude.meters(), 2) + "," + String(gps.hdop.hdop(), 2);
-    if (network.type == 'w' ) {
-      dataString += ",WIFI";
-    } else if (network.type == 'b' ) {
-      dataString += ",BLE";
-    }
-
-    File dataFile = SD.open(fileName, FILE_APPEND);
-    if (dataFile) {
-#ifdef S3OLED
-      fileInit = true;
-#endif
-      dataFile.println(dataString);
-      dataFile.close();
-      Serial.println("Data written: " + dataString);
-      blinkLEDGreen();
-    } else {
-#ifdef S3OLED
-      fileInit = false;
-#endif
-      Serial.println("Error opening " + fileName);
-      blinkLEDRed();
-    }
-  } else {
-    blinkLEDPurple();
-  }
-}
-
-
-void blinkLEDWhite() {
-#ifdef S3OLED
-#else
-  led = CRGB::White;
-#endif
-  blinkLED();
-#ifdef S3OLED
-  fg = WHITE;
-#endif
-}
-void blinkLEDRed() {
-#ifdef S3OLED
-  fg = RED;
-#else
-  led = CRGB::Red;
-#endif
-  blinkLED();
-#ifdef S3OLED
-  fg = WHITE;
-#endif
-}
-void blinkLEDGreen() {
-#ifdef S3OLED
-  fg = GREEN;
-#else
-  led = CRGB::Green;
-#endif
-  blinkLED();
-#ifdef S3OLED
-  fg = WHITE;
-#endif
-}
-void blinkLEDPurple() {
-#ifdef S3OLED
-  fg = MAGENTA;
-#else
-  led = CRGB::Purple;
-#endif
-  blinkLED();
-#ifdef S3OLED
-  fg = WHITE;
-#endif
-}
-
-void blinkLED() {
-#ifdef S3OLED
-  if (!oled)
-    return;
-  AtomS3.Display.fillRect((AtomS3.Display.width() - blinkSize), (AtomS3.Display.height() - blinkSize) , blinkSize , blinkSize , fg);
-#else
-  FastLED.show();
-#endif
-  delay(50);
-#ifdef S3OLED
-  AtomS3.Display.fillRect((AtomS3.Display.width() - blinkSize), (AtomS3.Display.height() - blinkSize) , blinkSize , blinkSize , bg);
-#else
-  led = CRGB::Black;
-  FastLED.show();
-#endif
-
 }
